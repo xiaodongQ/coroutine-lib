@@ -48,6 +48,7 @@ public:
     ~Fiber();
 
     // 重用一个协程
+    // 重复利⽤已结束的协程，复⽤其栈空间，创建新的协程
     void reset(std::function<void()> cb);
 
     // 当前协程恢复执行

@@ -122,11 +122,15 @@ Fiber::~Fiber()
     if(debug) std::cout << "~Fiber(): id = " << m_id << std::endl;	
 }
 
+// 重复利⽤已结束的协程，复⽤其栈空间，创建新协程
 void Fiber::reset(std::function<void()> cb)
 {
+    // 本协程为结束状态，且栈空间不为空
     assert(m_stack != nullptr&&m_state == TERM);
 
+    // 就绪
     m_state = READY;
+    // 设置运行函数
     m_cb = cb;
 
     // 获取当前协程上下文
@@ -137,9 +141,10 @@ void Fiber::reset(std::function<void()> cb)
     }
 
     m_ctx.uc_link = nullptr;
+    // 复用栈空间
     m_ctx.uc_stack.ss_sp = m_stack;
     m_ctx.uc_stack.ss_size = m_stacksize;
-    // 绑定协程上下文和其执行函数：Fiber::MainFunc
+    // 绑定当前协程上下文和执行函数
     makecontext(&m_ctx, &Fiber::MainFunc, 0);
 }
 
