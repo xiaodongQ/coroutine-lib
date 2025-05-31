@@ -61,7 +61,7 @@ uint64_t Fiber::GetFiberId()
     return (uint64_t)-1;
 }
 
-// 构造，创建一个协程
+// 构造，创建一个协程。其中不会申请协程栈空间
 Fiber::Fiber()
 {
     SetThis(this);
@@ -150,13 +150,17 @@ void Fiber::reset(std::function<void()> cb)
 
 void Fiber::resume()
 {
+    // 恢复前是就绪状态，切换为运行状态
     assert(m_state==READY);
     
     m_state = RUNNING;
 
+    // 执行权是否出让给调度协程
     if(m_runInScheduler)
     {
+        // 将正在运行的协程指针设置为当前协程
         SetThis(this);
+        // 原来的协程出让给调度协程（上下文保存到调度协程的context里），并激活当前协程的上下文（m_ctx）
         if(swapcontext(&(t_scheduler_fiber->m_ctx), &m_ctx))
         {
             std::cerr << "resume() to t_scheduler_fiber failed\n";
@@ -166,6 +170,7 @@ void Fiber::resume()
     else
     {
         SetThis(this);
+        // 原协程出让给主协程，并激活当前协程
         if(swapcontext(&(t_thread_fiber->m_ctx), &m_ctx))
         {
             std::cerr << "resume() to t_thread_fiber failed\n";
@@ -180,12 +185,15 @@ void Fiber::yield()
 
     if(m_state!=TERM)
     {
+        // 就绪
         m_state = READY;
     }
 
     if(m_runInScheduler)
     {
+        // 本协程挂起时，出让给调度协程
         SetThis(t_scheduler_fiber);
+        // 上下文进行切换
         if(swapcontext(&m_ctx, &(t_scheduler_fiber->m_ctx)))
         {
             std::cerr << "yield() to to t_scheduler_fiber failed\n";
@@ -194,6 +202,7 @@ void Fiber::yield()
     }
     else
     {
+        // 出让给主协程
         SetThis(t_thread_fiber.get());
         if(swapcontext(&m_ctx, &(t_thread_fiber->m_ctx)))
         {
@@ -205,19 +214,22 @@ void Fiber::yield()
 
 void Fiber::MainFunc()
 {
-    // 当前运行的协程
+    // 当前运行的协程，如果没有则创建协程，其中使用private的Fiber()构造函数
     std::shared_ptr<Fiber> curr = GetThis();
     assert(curr!=nullptr);
 
-    // 调用协程绑定的执行函数
+    // 调用当前协程绑定的执行函数
     curr->m_cb();
-    // 调用完成后协程结束，状态 TERM
+
+    // 调用完成后协程结束，状态设置为 TERM
     curr->m_cb = nullptr;
     curr->m_state = TERM;
 
     // 运行完毕 -> 让出执行权
+    // 获取裸指针
     auto raw_ptr = curr.get();
-    curr.reset(); 
+    curr.reset();
+    // 挂起并切换到主协程。本协程前面已经设置为结束了，此处供后续协程重用
     raw_ptr->yield(); 
 }
 
