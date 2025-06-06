@@ -12,7 +12,7 @@ static thread_local std::string t_thread_name = "UNKNOWN";
 
 pid_t Thread::GetThreadId()
 {
-	return syscall(SYS_gettid);
+    return syscall(SYS_gettid);
 }
 
 Thread* Thread::GetThis()
@@ -80,7 +80,7 @@ void* Thread::run(void* arg)
     pthread_setname_np(pthread_self(), thread->m_name.substr(0, 15).c_str());
 
     std::function<void()> cb;
-    cb.swap(thread->m_cb); // swap -> 可以减少m_cb中只能指针的引用计数
+    cb.swap(thread->m_cb); // swap -> 可以减少m_cb中智能指针的引用计数
     
     // 初始化完成
     thread->m_semaphore.signal();

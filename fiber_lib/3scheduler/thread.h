@@ -53,7 +53,7 @@ public:
 
 public:
     // 获取系统分配的线程id
-	static pid_t GetThreadId();
+    static pid_t GetThreadId();
     // 获取当前所在线程
     static Thread* GetThis();
 
@@ -63,7 +63,7 @@ public:
     static void SetName(const std::string& name);
 
 private:
-	// 线程函数
+    // 线程函数
     static void* run(void* arg);
 
 private:

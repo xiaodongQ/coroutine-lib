@@ -18,7 +18,7 @@ public:
         std::cout << " number " << m_tasks.size() << std::endl;
 
         std::shared_ptr<Fiber> task;
-        // 调度策略：FIFO
+        // 调度策略：FCFS
         auto it = m_tasks.begin();
         while(it!=m_tasks.end())
         {
