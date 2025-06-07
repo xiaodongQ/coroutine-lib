@@ -17,6 +17,8 @@ int main(int argc, char const *argv[])
 {
 	{
 		// 可以尝试把false 变为true 此时调度器所在线程也将加入工作线程
+		// 构造函数：Scheduler(size_t threads = 1, bool use_caller = true, const std::string& name="Scheduler");
+		// 此处创建3个线程用于协程调度，
 		std::shared_ptr<Scheduler> scheduler = std::make_shared<Scheduler>(3, true, "scheduler_1");
 		
 		scheduler->start();
