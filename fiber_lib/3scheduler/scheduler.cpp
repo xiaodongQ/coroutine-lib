@@ -1,6 +1,8 @@
 #include "scheduler.h"
 
-static bool debug = false;
+static bool debug = true;
+// main.cpp里定义了全局mutex_cout，此处声明，用于防止两处的日志交错打印
+extern std::mutex mutex_cout;
 
 namespace sylar {
 
@@ -22,13 +24,17 @@ m_useCaller(use_caller), m_name(name)
 {
     assert(threads>0 && Scheduler::GetThis()==nullptr);
 
-    SetThis();
+    // coroutine-lib里的这部分有问题，此处导致stop()里的 assert(GetThis() != this) 通不过
+    // SetThis();
 
     Thread::SetName(m_name);
 
     // 使用主线程当作工作线程（也用于协程调度）
     if(use_caller)
     {
+        // 上面的SetThis();调整到if语句块中
+        SetThis();
+
         // 需要创建的工作线程数-1，当前线程也占了一个工作线程
         threads --;
 
@@ -48,7 +54,7 @@ m_useCaller(use_caller), m_name(name)
     }
 
     m_threadCount = threads;
-    if(debug) std::cout << "Scheduler::Scheduler() success\n";
+    if(debug) std::cout << "Scheduler::Scheduler() success\n" << "    ==== scheduler this: " << GetThis() << std::endl;
 }
 
 Scheduler::~Scheduler()
@@ -58,7 +64,7 @@ Scheduler::~Scheduler()
     {
         t_scheduler = nullptr;
     }
-    if(debug) std::cout << "Scheduler::~Scheduler() success\n";
+    if(debug) std::cout << "Scheduler::~Scheduler() success\n" << "    ==== scheduler this: " << GetThis() << std::endl;
 }
 
 void Scheduler::start()
@@ -87,14 +93,20 @@ void Scheduler::start()
 void Scheduler::run()
 {
     int thread_id = Thread::GetThreadId();
-    if(debug) std::cout << "Schedule::run() starts in thread: " << thread_id << std::endl;
-    
+
     //set_hook_enable(true);
 
     // 设置线程局部变量t_scheduler指向本调度类实例
     // 由于使用时只会创建一个Scheduler实例，所以各线程里指针虽然各自独立，但指向都是本调度类
         // 不同线程此处设置的this不同？？？ 答：不会，是一样的
     SetThis();
+
+    if(debug) {
+        // 为避免并发情况下日志交替，用mutex_cout做下互斥
+        std::lock_guard<std::mutex> lk(mutex_cout);
+        std::cout << "Schedule::run() starts in thread: " << thread_id << std::endl;
+        std::cout << "    ==== run() scheduler this: " << GetThis() << std::endl;
+    }
 
     // 运行在新创建的线程 -> 需要创建主协程。
     // 即不是主线程时，通过Fiber::GetThis()创建该线程的主协程
@@ -105,6 +117,7 @@ void Scheduler::run()
     }
 
     // 创建idle协程，协程函数`Scheduler::idle`
+    // 构造时是 `READY` 状态
     std::shared_ptr<Fiber> idle_fiber = std::make_shared<Fiber>(std::bind(&Scheduler::idle, this));
     ScheduleTask task;
     
@@ -178,6 +191,9 @@ void Scheduler::run()
         else
         {
             // 系统关闭 -> idle协程将从死循环跳出并结束 -> 此时的idle协程状态为TERM -> 再次进入将跳出循环并退出run()
+                // idle协程的协程函数中，只要不是stoping状态，就会while处理；
+                // 若是执行了stop，则协程函数结束，协程状态为 TERM 状态
+                // 然后会通过下面的break退出当前线程函数里的while(true)，结束当前线程
             if (idle_fiber->getState() == Fiber::TERM) 
             {
                 if(debug) std::cout << "Schedule::run() ends in thread: " << thread_id << std::endl;
@@ -202,15 +218,13 @@ void Scheduler::stop()
 
     m_stopping = true;	
 
+    // 当使用了caller线程来调度时（调度类主线程作为一个调度线程），只能由caller线程来执行stop
     if (m_useCaller) 
     {
-        // 当使用了caller线程来调度时（调度类主线程作为一个调度线程），只能由caller线程来执行stop
         assert(GetThis() == this);
-    } 
-    else 
+    }
+    else
     {
-        // 没搞懂，不全是 Scheduler实例的指针吗？
-            // 如果主线程（caller线程）不作为其中一个调度线程，则
         assert(GetThis() != this);
     }
     
@@ -233,9 +247,11 @@ void Scheduler::stop()
     std::vector<std::shared_ptr<Thread>> thrs;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
+        // 获取出来线程，并清理成员变量
         thrs.swap(m_threads);
     }
 
+    // 等待所有线程结束
     for(auto &i : thrs)
     {
         i->join();
@@ -249,10 +265,15 @@ void Scheduler::tickle()
 
 void Scheduler::idle()
 {
+    // 只要不是外部进行了stop，idle线程就一直是循环的，idle协程和调度协程间进行切换
     while(!stopping())
     {
-        if(debug) std::cout << "Scheduler::idle(), sleeping in thread: " << Thread::GetThreadId() << std::endl;	
-        sleep(1);	
+        if(debug) {
+            // 为避免并发情况下日志交替，用mutex_cout做下互斥
+            std::lock_guard<std::mutex> lk(mutex_cout);
+            std::cout << "Scheduler::idle(), sleeping in thread: " << Thread::GetThreadId() << std::endl;
+        }
+        sleep(1);
         // 挂起当前正在执行的协程，切换到调度协程
         Fiber::GetThis()->yield();
     }
