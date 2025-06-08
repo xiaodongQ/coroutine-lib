@@ -59,31 +59,38 @@ void IOManager::FdContext::triggerEvent(IOManager::Event event) {
     return;
 }
 
+// IO调度构造函数
 IOManager::IOManager(size_t threads, bool use_caller, const std::string &name): 
 Scheduler(threads, use_caller, name), TimerManager()
 {
     // create epoll fd
+    // 参数自Linux 2.6.8会被忽略，但要>0
     m_epfd = epoll_create(5000);
     assert(m_epfd > 0);
 
     // create pipe
+    // 创建一个pipe管道时，需要2个文件fd，一读一写。一般是fd[1]写，fd[0]读
     int rt = pipe(m_tickleFds);
     assert(!rt);
 
     // add read event to epoll
     epoll_event event;
+    // 注册读事件，且使用边缘触发（来事件后需一次性读取完对应数据）
     event.events  = EPOLLIN | EPOLLET; // Edge Triggered
     event.data.fd = m_tickleFds[0];
 
     // non-blocked
     rt = fcntl(m_tickleFds[0], F_SETFL, O_NONBLOCK);
     assert(!rt);
-
+    // 此处注册的句柄为pipe的 fd[0]，用于读
     rt = epoll_ctl(m_epfd, EPOLL_CTL_ADD, m_tickleFds[0], &event);
     assert(!rt);
 
+    // 初始化 FdContext数组
     contextResize(32);
 
+    // 这里的start()没有在IOManager类中重载，用的是父类Scheduler中的函数实现。
+    // 里面会初始化线程池，创建threads个线程都用于协程调度
     start();
 }
 
@@ -105,6 +112,7 @@ IOManager::~IOManager() {
 // no lock
 void IOManager::contextResize(size_t size) 
 {
+    // 调整vector大小，下面会初始化创建FdContext结构
     m_fdContexts.resize(size);
 
     for (size_t i = 0; i < m_fdContexts.size(); ++i) 
@@ -119,37 +127,47 @@ void IOManager::contextResize(size_t size)
 
 int IOManager::addEvent(int fd, Event event, std::function<void()> cb) 
 {
-    // attemp to find FdContext 
+    // attemp to find FdContext
     FdContext *fd_ctx = nullptr;
     
+    // 读锁
     std::shared_lock<std::shared_mutex> read_lock(m_mutex);
     if ((int)m_fdContexts.size() > fd) 
     {
+        // fd作为数组下标，好处是便于索引查找，不过没使用的fd下标存在一些浪费
         fd_ctx = m_fdContexts[fd];
+        // 解除读锁。加锁只为了访问 m_fdContexts
         read_lock.unlock();
     }
-    else 
+    else
     {
+        // 先解除上面的读锁
         read_lock.unlock();
+        // 写锁
         std::unique_lock<std::shared_mutex> write_lock(m_mutex);
+        // fd作下标超出vector容量，则根据 fd*1.5 来扩容，而不是之前的capacity
         contextResize(fd * 1.5);
         fd_ctx = m_fdContexts[fd];
     }
 
+    // fd上下文整体加互斥锁
     std::lock_guard<std::mutex> lock(fd_ctx->mutex);
     
     // the event has already been added
-    if(fd_ctx->events & event) 
+    if(fd_ctx->events & event)
     {
         return -1;
     }
 
     // add new event
+    // 原来的事件不是NONE（0），则op是修改，按位或增加本次要注册的事件
     int op = fd_ctx->events ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
     epoll_event epevent;
+    // 边缘触发模式
     epevent.events   = EPOLLET | fd_ctx->events | event;
     epevent.data.ptr = fd_ctx;
 
+    // 事件注册
     int rt = epoll_ctl(m_epfd, op, fd, &epevent);
     if (rt) 
     {
@@ -157,21 +175,27 @@ int IOManager::addEvent(int fd, Event event, std::function<void()> cb)
         return -1;
     }
 
+    // 注册的事件计数+1
     ++m_pendingEventCount;
 
     // update fdcontext
+    // 更新成 Event 里限定的3个枚举（无事件、读、写），去掉了前面 按位| 的边缘触发标志
     fd_ctx->events = (Event)(fd_ctx->events | event);
 
     // update event context
+    // 根据读写类型获取对应的 FdContext，设置其信息：调度类指针 和 协程/回调函数
+    // fd_ctx指针设置给了上述 epoll_event 中的私有数据指针，只是个指针。此处更新fd_ctx指向结构的内容，前后顺序没影响
     FdContext::EventContext& event_ctx = fd_ctx->getEventContext(event);
     assert(!event_ctx.scheduler && !event_ctx.fiber && !event_ctx.cb);
     event_ctx.scheduler = Scheduler::GetThis();
     if (cb) 
     {
+        // 如果传入了函数对象，则记录在EventContext中
         event_ctx.cb.swap(cb);
     } 
     else 
     {
+        // 没传函数则创建一个新协程（新协程默认是RUNNING），并记录在EventContext中
         event_ctx.fiber = Fiber::GetThis();
         assert(event_ctx.fiber->getState() == Fiber::RUNNING);
     }
@@ -209,6 +233,7 @@ bool IOManager::delEvent(int fd, Event event) {
     epevent.events   = EPOLLET | new_events;
     epevent.data.ptr = fd_ctx;
 
+    // 删除注册的事件
     int rt = epoll_ctl(m_epfd, op, fd, &epevent);
     if (rt) 
     {
@@ -346,7 +371,7 @@ bool IOManager::stopping()
 }
 
 
-void IOManager::idle() 
+void IOManager::idle()
 {    
     static const uint64_t MAX_EVNETS = 256;
     std::unique_ptr<epoll_event[]> events(new epoll_event[MAX_EVNETS]);
