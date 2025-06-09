@@ -64,6 +64,7 @@ public:
     uint64_t getNextTimer();
 
     // 取出所有超时定时器的回调函数
+    // 会把超时的定时器从堆（set模拟最小堆）中删除，并返回这些定时器的超时回调
     void listExpiredCb(std::vector<std::function<void()>>& cbs);
 
     // 堆中是否有timer

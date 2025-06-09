@@ -372,8 +372,9 @@ bool IOManager::stopping()
 
 
 void IOManager::idle()
-{    
+{
     static const uint64_t MAX_EVNETS = 256;
+    // 创建临时的epoll_event数组（没用vector<epoll_event>方式），用于接收epoll_wait返回的就绪事件，每次最大256个
     std::unique_ptr<epoll_event[]> events(new epoll_event[MAX_EVNETS]);
 
     while (true) 
@@ -388,31 +389,40 @@ void IOManager::idle()
 
         // blocked at epoll_wait
         int rt = 0;
+        // 此处while循环为了结合定时器做超时检查，等待epoll事件超时触发，有触发则break此处的while(true)
         while(true)
         {
             static const uint64_t MAX_TIMEOUT = 5000;
+            // 返回堆中最近的超时时间，还有多少ms到期（set里第一个成员时间最小，最先到期）
             uint64_t next_timeout = getNextTimer();
             next_timeout = std::min(next_timeout, MAX_TIMEOUT);
 
+            // 获取events原始指针，接收epoll触发的事件。此处阻塞等待事件发生，避免idle协程空转
             rt = epoll_wait(m_epfd, events.get(), MAX_EVNETS, (int)next_timeout);
             // EINTR -> retry
-            if(rt < 0 && errno == EINTR) 
+            if(rt < 0 && errno == EINTR)
             {
                 continue;
-            } 
-            else 
+            }
+            else
             {
+                // 只要有任何事件通知就break出小循环
                 break;
             }
-        };
+        // 怎么}后还加了个`;` ？ sylar里是 `do{} while(true);`，这里“借鉴”不完全
+        // };
+        }
 
         // collect all timers overdue
+        // 既然有超时触发的事件，此处捞取超时定时器的回调函数
         std::vector<std::function<void()>> cbs;
         listExpiredCb(cbs);
         if(!cbs.empty()) 
         {
+            // 把这些回调函数都加入到协程调度器的任务队列里
             for(const auto& cb : cbs) 
             {
+                // 如果是第一次添加任务，则会tickle()一次：其中会向管道的fd[1]进行一次write（fd[0]就可以收到epoll读事件）
                 scheduleLock(cb);
             }
             cbs.clear();
@@ -424,6 +434,7 @@ void IOManager::idle()
             epoll_event& event = events[i];
 
             // tickle event
+            // pipe管道，则做read，由于是边缘触发，此处while处理。虽然fd[1] write时也只是写了1个字符。
             if (event.data.fd == m_tickleFds[0]) 
             {
                 uint8_t dummy[256];
@@ -442,6 +453,7 @@ void IOManager::idle()
                 event.events |= (EPOLLIN | EPOLLOUT) & fd_ctx->events;
             }
             // events happening during this turn of epoll_wait
+            // 事件只保留读和写类型
             int real_events = NONE;
             if (event.events & EPOLLIN) 
             {
@@ -470,6 +482,7 @@ void IOManager::idle()
             }
 
             // schedule callback and update fdcontext and event context
+            // 根据类型触发相应的事件回调处理
             if (real_events & READ) 
             {
                 fd_ctx->triggerEvent(READ);

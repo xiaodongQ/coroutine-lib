@@ -86,6 +86,7 @@ m_recurring(recurring), m_ms(ms), m_cb(cb), m_manager(manager)
 bool Timer::Comparator::operator()(const std::shared_ptr<Timer>& lhs, const std::shared_ptr<Timer>& rhs) const
 {
     assert(lhs!=nullptr&&rhs!=nullptr);
+    // 由小到大
     return lhs->m_next < rhs->m_next;
 }
 
@@ -120,6 +121,7 @@ std::shared_ptr<Timer> TimerManager::addConditionTimer(uint64_t ms, std::functio
     return addTimer(ms, std::bind(&OnTimer, weak_cond, cb), recurring);
 }
 
+// 返回堆中最近的超时时间，还有多少ms到期（set里第一个成员时间最小，最先到期）
 uint64_t TimerManager::getNextTimer()
 {
     std::shared_lock<std::shared_mutex> read_lock(m_mutex);
@@ -143,6 +145,7 @@ uint64_t TimerManager::getNextTimer()
     }
     else
     {
+        // 时间差ms，还有多久会出现超时的定时器
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time - now);
         return static_cast<uint64_t>(duration.count());            
     }  
@@ -180,6 +183,7 @@ void TimerManager::listExpiredCb(std::vector<std::function<void()>>& cbs)
 
 bool TimerManager::hasTimer() 
 {
+    // 读锁
     std::shared_lock<std::shared_mutex> read_lock(m_mutex);
     return !m_timers.empty();
 }
@@ -189,8 +193,10 @@ void TimerManager::addTimer(std::shared_ptr<Timer> timer)
 {
     bool at_front = false;
     {
+        // 写锁
         std::unique_lock<std::shared_mutex> write_lock(m_mutex);
         auto it = m_timers.insert(timer).first;
+        // 第一次添加记录
         at_front = (it == m_timers.begin()) && !m_tickled;
         
         // only tickle once till one thread wakes up and runs getNextTime()
@@ -202,7 +208,8 @@ void TimerManager::addTimer(std::shared_ptr<Timer> timer)
    
     if(at_front)
     {
-        // wake up 
+        // wake up
+        // 可以被子类重载，目标该函数里是空实现
         onTimerInsertedAtFront();
     }
 }

@@ -134,6 +134,7 @@ uint64_t TimerManager::getNextTimer()
     }
 
     auto now = std::chrono::system_clock::now();
+    // 堆顶元素
     auto time = (*m_timers.begin())->m_next;
 
     if(now>=time)
@@ -154,6 +155,7 @@ void TimerManager::listExpiredCb(std::vector<std::function<void()>>& cbs)
 
     std::unique_lock<std::shared_mutex> write_lock(m_mutex); 
 
+    // 时间是否发生了循环（回绕）
     bool rollover = detectClockRollover();
     
     // 回退 -> 清理所有timer || 超时 -> 清理超时timer
@@ -211,6 +213,7 @@ bool TimerManager::detectClockRollover()
 {
     bool rollover = false;
     auto now = std::chrono::system_clock::now();
+    // 上次的时间 - 当前时间 > 1小时，表示发生了回绕
     if(now < (m_previouseTime - std::chrono::milliseconds(60 * 60 * 1000))) 
     {
         rollover = true;
