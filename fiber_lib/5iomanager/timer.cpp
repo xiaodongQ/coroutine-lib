@@ -167,6 +167,7 @@ void TimerManager::listExpiredCb(std::vector<std::function<void()>>& cbs)
         
         cbs.push_back(temp->m_cb); 
 
+        // 如果定时器支持循环，则重置超时时间后重新加入到管理器中
         if (temp->m_recurring)
         {
             // 重新加入时间堆
@@ -216,6 +217,7 @@ void TimerManager::addTimer(std::shared_ptr<Timer> timer)
 
 bool TimerManager::detectClockRollover() 
 {
+    // 是否发生了往回的时间跳变（系统校时），时间比之前早超过1小时
     bool rollover = false;
     auto now = std::chrono::system_clock::now();
     if(now < (m_previouseTime - std::chrono::milliseconds(60 * 60 * 1000))) 

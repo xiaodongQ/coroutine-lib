@@ -6,6 +6,8 @@
 #include "ioscheduler.h"
 
 static bool debug = true;
+// 仅用于打印
+std::mutex mutex_cout;
 
 namespace sylar {
 
@@ -379,11 +381,17 @@ void IOManager::idle()
 
     while (true) 
     {
-        if(debug) std::cout << "IOManager::idle(),run in thread: " << Thread::GetThreadId() << std::endl; 
+        if(debug) {
+            std::lock_guard<std::mutex> lk(mutex_cout);
+            std::cout << "IOManager::idle(),run in thread: " << Thread::GetThreadId() << std::endl; 
+        }
 
         if(stopping()) 
         {
-            if(debug) std::cout << "name = " << getName() << " idle exits in thread: " << Thread::GetThreadId() << std::endl;
+            if(debug) {
+                std::lock_guard<std::mutex> lk(mutex_cout);
+                std::cout << "name = " << getName() << " idle exits in thread: " << Thread::GetThreadId() << std::endl;
+            }
             break;
         }
 

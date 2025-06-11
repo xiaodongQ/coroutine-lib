@@ -37,12 +37,14 @@ int main(int argc, char const *argv[])
     sockaddr_in server;
     server.sin_family = AF_INET;
     server.sin_port = htons(80);  // HTTP 标准端口
+    // 百度网站的ip
     server.sin_addr.s_addr = inet_addr("103.235.46.96");
 
     fcntl(sock, F_SETFL, O_NONBLOCK);
 
     connect(sock, (struct sockaddr *)&server, sizeof(server));
     
+    // 发送 GET请求
     manager.addEvent(sock, IOManager::WRITE, &func2);
     manager.addEvent(sock, IOManager::READ, &func);
 
