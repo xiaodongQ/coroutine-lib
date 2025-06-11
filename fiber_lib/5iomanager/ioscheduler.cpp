@@ -6,8 +6,8 @@
 #include "ioscheduler.h"
 
 static bool debug = true;
-// 仅用于打印
-std::mutex mutex_cout;
+// 临时新增仅用于打印
+extern std::mutex mutex_cout;
 
 namespace sylar {
 

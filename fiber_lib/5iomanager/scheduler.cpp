@@ -1,6 +1,8 @@
 #include "scheduler.h"
 
 static bool debug = true;
+// 临时用于日志互斥打印
+extern std::mutex mutex_cout;
 
 namespace sylar {
 
@@ -80,7 +82,10 @@ void Scheduler::start()
 void Scheduler::run()
 {
     int thread_id = Thread::GetThreadId();
-    if(debug) std::cout << "Schedule::run() starts in thread: " << thread_id << std::endl;
+    if(debug) {
+        std::lock_guard<std::mutex> lk(mutex_cout);
+        std::cout << "Schedule::run() starts in thread: " << thread_id << std::endl;
+    }
     
     //set_hook_enable(true);
 
@@ -157,7 +162,10 @@ void Scheduler::run()
             // 系统关闭 -> idle协程将从死循环跳出并结束 -> 此时的idle协程状态为TERM -> 再次进入将跳出循环并退出run()
             if (idle_fiber->getState() == Fiber::TERM) 
             {
-                if(debug) std::cout << "Schedule::run() ends in thread: " << thread_id << std::endl;
+                if(debug) {
+                    std::lock_guard<std::mutex> lk(mutex_cout);
+                    std::cout << "Schedule::run() ends in thread: " << thread_id << std::endl;
+                }
                 break;
             }
             m_idleThreadCount++;
@@ -225,7 +233,10 @@ void Scheduler::idle()
 {
     while(!stopping())
     {
-        if(debug) std::cout << "Scheduler::idle(), sleeping in thread: " << Thread::GetThreadId() << std::endl;	
+        if(debug) {
+            std::lock_guard<std::mutex> lk(mutex_cout);
+            std::cout << "Scheduler::idle(), sleeping in thread: " << Thread::GetThreadId() << std::endl;	
+        }
         sleep(1);	
         Fiber::GetThis()->yield();
     }

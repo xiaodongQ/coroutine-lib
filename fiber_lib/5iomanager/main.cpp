@@ -11,6 +11,9 @@
 
 using namespace sylar;
 
+// 临时新增仅用于打印
+std::mutex mutex_cout;
+
 char recv_data[4096];
 
 const char data[] = "GET / HTTP/1.0\r\n\r\n"; 
@@ -48,6 +51,7 @@ int main(int argc, char const *argv[])
     manager.addEvent(sock, IOManager::WRITE, &func2);
     manager.addEvent(sock, IOManager::READ, &func);
 
+    std::lock_guard<std::mutex> lk(mutex_cout);
     std::cout << "event has been posted\n\n";
     
     return 0;
