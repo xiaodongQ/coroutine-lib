@@ -51,8 +51,13 @@ int main(int argc, char const *argv[])
     manager.addEvent(sock, IOManager::WRITE, &func2);
     manager.addEvent(sock, IOManager::READ, &func);
 
-    std::lock_guard<std::mutex> lk(mutex_cout);
-    std::cout << "event has been posted\n\n";
-    
+    {
+        std::lock_guard<std::mutex> lk(mutex_cout);
+        std::cout << "event has been posted\n\n";
+    }
+
+    // 等待一会，防止主线程退出提前触发调度线程等的析构，影响流程
+    sleep(1);
+
     return 0;
 }
