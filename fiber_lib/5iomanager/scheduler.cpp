@@ -178,7 +178,10 @@ void Scheduler::run()
 
 void Scheduler::stop()
 {
-    if(debug) std::cout << "Schedule::stop() starts in thread: " << Thread::GetThreadId() << std::endl;
+    if(debug) {
+        std::lock_guard<std::mutex> lk(mutex_cout);
+        std::cout << "Schedule::stop() starts in thread: " << Thread::GetThreadId() << std::endl;
+    }
     
     if(stopping())
     {

@@ -47,29 +47,32 @@ void set_hook_enable(bool flag)
 
 void hook_init()
 {
-	static bool is_inited = false;
-	if(is_inited)
-	{
-		return;
-	}
+    static bool is_inited = false;
+    if(is_inited)
+    {
+        return;
+    }
 
-	// test
-	is_inited = true;
+    // test
+    is_inited = true;
 
-
+// 定义临时的`XX(name)`宏，`HOOK_FUN(XX)`则是对所有的系统接口都执行 `XX(接口名)`
+// 以sleep接口展开为例，查看过程：
+    // `XX(sleep)`展开即：sleep_f = (sleep_fun)dlsym(RTLD_NEXT, "sleep");
+    // 定义了一个变量 `sleep_f`
 // assignment -> sleep_f = (sleep_fun)dlsym(RTLD_NEXT, "sleep"); -> dlsym -> fetch the original symbols/function
 #define XX(name) name ## _f = (name ## _fun)dlsym(RTLD_NEXT, #name);
-	HOOK_FUN(XX)
+    HOOK_FUN(XX)
 #undef XX
 }
 
 // static variable initialisation will run before the main function
 struct HookIniter
 {
-	HookIniter()
-	{
-		hook_init();
-	}
+    HookIniter()
+    {
+        hook_init();
+    }
 };
 
 static HookIniter s_hook_initer;
@@ -113,7 +116,7 @@ static ssize_t do_io(int fd, OriginFun fun, const char* hook_fun_name, uint32_t 
     std::shared_ptr<timer_info> tinfo(new timer_info);
 
 retry:
-	// run the function
+    // run the function
     ssize_t n = fun(fd, std::forward<Args>(args)...);
     
     // EINTR ->Operation interrupted by system ->retry
@@ -182,77 +185,81 @@ retry:
 
 extern "C"{
 
+// 定义临时的`XX(name)`宏，注意和上面不一样
+// 以sleep接口为例，查看过程：
+    // `XX(sleep)`展开即：sleep_fun sleep_f = nullptr;
+    // 定义了一个全局变量`sleep_f`，其类型是 `sleep_fun`
 // declaration -> sleep_fun sleep_f = nullptr;
 #define XX(name) name ## _fun name ## _f = nullptr;
-	HOOK_FUN(XX)
+    HOOK_FUN(XX)
 #undef XX
 
 // only use at task fiber
 unsigned int sleep(unsigned int seconds)
 {
-	if(!sylar::t_hook_enable)
-	{
-		return sleep_f(seconds);
-	}
+    if(!sylar::t_hook_enable)
+    {
+        return sleep_f(seconds);
+    }
 
-	std::shared_ptr<sylar::Fiber> fiber = sylar::Fiber::GetThis();
-	sylar::IOManager* iom = sylar::IOManager::GetThis();
-	// add a timer to reschedule this fiber
-	iom->addTimer(seconds*1000, [fiber, iom](){iom->scheduleLock(fiber, -1);});
-	// wait for the next resume
-	fiber->yield();
-	return 0;
+    std::shared_ptr<sylar::Fiber> fiber = sylar::Fiber::GetThis();
+    sylar::IOManager* iom = sylar::IOManager::GetThis();
+    // add a timer to reschedule this fiber
+    iom->addTimer(seconds*1000, [fiber, iom](){iom->scheduleLock(fiber, -1);});
+    // wait for the next resume
+    fiber->yield();
+    return 0;
 }
 
 int usleep(useconds_t usec)
 {
-	if(!sylar::t_hook_enable)
-	{
-		return usleep_f(usec);
-	}
+    if(!sylar::t_hook_enable)
+    {
+        return usleep_f(usec);
+    }
 
-	std::shared_ptr<sylar::Fiber> fiber = sylar::Fiber::GetThis();
-	sylar::IOManager* iom = sylar::IOManager::GetThis();
-	// add a timer to reschedule this fiber
-	iom->addTimer(usec/1000, [fiber, iom](){iom->scheduleLock(fiber);});
-	// wait for the next resume
-	fiber->yield();
-	return 0;
+    std::shared_ptr<sylar::Fiber> fiber = sylar::Fiber::GetThis();
+    sylar::IOManager* iom = sylar::IOManager::GetThis();
+    // add a timer to reschedule this fiber
+    iom->addTimer(usec/1000, [fiber, iom](){iom->scheduleLock(fiber);});
+    // wait for the next resume
+    fiber->yield();
+    return 0;
 }
 
 int nanosleep(const struct timespec* req, struct timespec* rem)
 {
-	if(!sylar::t_hook_enable)
-	{
-		return nanosleep_f(req, rem);
-	}	
+    if(!sylar::t_hook_enable)
+    {
+        return nanosleep_f(req, rem);
+    }	
 
-	int timeout_ms = req->tv_sec*1000 + req->tv_nsec/1000/1000;
+    int timeout_ms = req->tv_sec*1000 + req->tv_nsec/1000/1000;
 
-	std::shared_ptr<sylar::Fiber> fiber = sylar::Fiber::GetThis();
-	sylar::IOManager* iom = sylar::IOManager::GetThis();
-	// add a timer to reschedule this fiber
-	iom->addTimer(timeout_ms, [fiber, iom](){iom->scheduleLock(fiber, -1);});
-	// wait for the next resume
-	fiber->yield();	
-	return 0;
+    std::shared_ptr<sylar::Fiber> fiber = sylar::Fiber::GetThis();
+    sylar::IOManager* iom = sylar::IOManager::GetThis();
+    // add a timer to reschedule this fiber
+    iom->addTimer(timeout_ms, [fiber, iom](){iom->scheduleLock(fiber, -1);});
+    // wait for the next resume
+    fiber->yield();	
+    return 0;
 }
 
 int socket(int domain, int type, int protocol)
 {
-	if(!sylar::t_hook_enable)
-	{
-		return socket_f(domain, type, protocol);
-	}	
+    if(!sylar::t_hook_enable)
+    {
+        return socket_f(domain, type, protocol);
+    }
 
-	int fd = socket_f(domain, type, protocol);
-	if(fd==-1)
-	{
-		std::cerr << "socket() failed:" << strerror(errno) << std::endl;
-		return fd;
-	}
-	sylar::FdMgr::GetInstance()->get(fd, true);
-	return fd;
+    int fd = socket_f(domain, type, protocol);
+    if(fd==-1)
+    {
+        std::cerr << "socket() failed:" << strerror(errno) << std::endl;
+        return fd;
+    }
+    sylar::FdMgr::GetInstance()->get(fd, true);
+    return fd;
 }
 
 int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen, uint64_t timeout_ms) 
@@ -359,94 +366,94 @@ int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen,
 static uint64_t s_connect_timeout = -1;
 int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
-	return connect_with_timeout(sockfd, addr, addrlen, s_connect_timeout);
+    return connect_with_timeout(sockfd, addr, addrlen, s_connect_timeout);
 }
 
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
-	int fd = do_io(sockfd, accept_f, "accept", sylar::IOManager::READ, SO_RCVTIMEO, addr, addrlen);	
-	if(fd>=0)
-	{
-		sylar::FdMgr::GetInstance()->get(fd, true);
-	}
-	return fd;
+    int fd = do_io(sockfd, accept_f, "accept", sylar::IOManager::READ, SO_RCVTIMEO, addr, addrlen);	
+    if(fd>=0)
+    {
+        sylar::FdMgr::GetInstance()->get(fd, true);
+    }
+    return fd;
 }
 
 ssize_t read(int fd, void *buf, size_t count)
 {
-	return do_io(fd, read_f, "read", sylar::IOManager::READ, SO_RCVTIMEO, buf, count);	
+    return do_io(fd, read_f, "read", sylar::IOManager::READ, SO_RCVTIMEO, buf, count);	
 }
 
 ssize_t readv(int fd, const struct iovec *iov, int iovcnt)
 {
-	return do_io(fd, readv_f, "readv", sylar::IOManager::READ, SO_RCVTIMEO, iov, iovcnt);	
+    return do_io(fd, readv_f, "readv", sylar::IOManager::READ, SO_RCVTIMEO, iov, iovcnt);	
 }
 
 ssize_t recv(int sockfd, void *buf, size_t len, int flags)
 {
-	return do_io(sockfd, recv_f, "recv", sylar::IOManager::READ, SO_RCVTIMEO, buf, len, flags);	
+    return do_io(sockfd, recv_f, "recv", sylar::IOManager::READ, SO_RCVTIMEO, buf, len, flags);	
 }
 
 ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen)
 {
-	return do_io(sockfd, recvfrom_f, "recvfrom", sylar::IOManager::READ, SO_RCVTIMEO, buf, len, flags, src_addr, addrlen);	
+    return do_io(sockfd, recvfrom_f, "recvfrom", sylar::IOManager::READ, SO_RCVTIMEO, buf, len, flags, src_addr, addrlen);	
 }
 
 ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags)
 {
-	return do_io(sockfd, recvmsg_f, "recvmsg", sylar::IOManager::READ, SO_RCVTIMEO, msg, flags);	
+    return do_io(sockfd, recvmsg_f, "recvmsg", sylar::IOManager::READ, SO_RCVTIMEO, msg, flags);	
 }
 
 ssize_t write(int fd, const void *buf, size_t count)
 {
-	return do_io(fd, write_f, "write", sylar::IOManager::WRITE, SO_SNDTIMEO, buf, count);	
+    return do_io(fd, write_f, "write", sylar::IOManager::WRITE, SO_SNDTIMEO, buf, count);	
 }
 
 ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
 {
-	return do_io(fd, writev_f, "writev", sylar::IOManager::WRITE, SO_SNDTIMEO, iov, iovcnt);	
+    return do_io(fd, writev_f, "writev", sylar::IOManager::WRITE, SO_SNDTIMEO, iov, iovcnt);	
 }
 
 ssize_t send(int sockfd, const void *buf, size_t len, int flags)
 {
-	return do_io(sockfd, send_f, "send", sylar::IOManager::WRITE, SO_SNDTIMEO, buf, len, flags);	
+    return do_io(sockfd, send_f, "send", sylar::IOManager::WRITE, SO_SNDTIMEO, buf, len, flags);	
 }
 
 ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)
 {
-	return do_io(sockfd, sendto_f, "sendto", sylar::IOManager::WRITE, SO_SNDTIMEO, buf, len, flags, dest_addr, addrlen);	
+    return do_io(sockfd, sendto_f, "sendto", sylar::IOManager::WRITE, SO_SNDTIMEO, buf, len, flags, dest_addr, addrlen);	
 }
 
 ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags)
 {
-	return do_io(sockfd, sendmsg_f, "sendmsg", sylar::IOManager::WRITE, SO_SNDTIMEO, msg, flags);	
+    return do_io(sockfd, sendmsg_f, "sendmsg", sylar::IOManager::WRITE, SO_SNDTIMEO, msg, flags);	
 }
 
 int close(int fd)
 {
-	if(!sylar::t_hook_enable)
-	{
-		return close_f(fd);
-	}	
+    if(!sylar::t_hook_enable)
+    {
+        return close_f(fd);
+    }	
 
-	std::shared_ptr<sylar::FdCtx> ctx = sylar::FdMgr::GetInstance()->get(fd);
+    std::shared_ptr<sylar::FdCtx> ctx = sylar::FdMgr::GetInstance()->get(fd);
 
-	if(ctx)
-	{
-		auto iom = sylar::IOManager::GetThis();
-		if(iom)
-		{	
-			iom->cancelAll(fd);
-		}
-		// del fdctx
-		sylar::FdMgr::GetInstance()->del(fd);
-	}
-	return close_f(fd);
+    if(ctx)
+    {
+        auto iom = sylar::IOManager::GetThis();
+        if(iom)
+        {	
+            iom->cancelAll(fd);
+        }
+        // del fdctx
+        sylar::FdMgr::GetInstance()->del(fd);
+    }
+    return close_f(fd);
 }
 
 int fcntl(int fd, int cmd, ... /* arg */ )
 {
-  	va_list va; // to access a list of mutable parameters
+      va_list va; // to access a list of mutable parameters
 
     va_start(va, cmd);
     switch(cmd) 
@@ -574,7 +581,7 @@ int ioctl(int fd, unsigned long request, ...)
 
 int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen)
 {
-	return getsockopt_f(sockfd, level, optname, optval, optlen);
+    return getsockopt_f(sockfd, level, optname, optval, optlen);
 }
 
 int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
